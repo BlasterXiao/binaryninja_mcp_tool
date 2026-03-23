@@ -1,0 +1,13 @@
+{
+  "plugin_metadata": {
+    "name": "Binary Ninja MCP Server",
+    "api": ["python3"],
+    "description": "Expose Binary Ninja analysis via Model Context Protocol (HTTP/Streamable HTTP).",
+    "author": "BN MCP",
+    "license": {
+      "name": "MIT",
+      "text": "MIT License"
+    },
+    "version": "1.0.0"
+  }
+}
