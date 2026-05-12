@@ -3,20 +3,21 @@ from __future__ import annotations
 import json
 from typing import List, Optional, Set
 
-from .helpers import resolve_function, safe_str
+from .helpers import coerce_address, coalesce_address_or_name, resolve_function, safe_str
 
 
 def register(mcp, get_bv) -> None:
     @mcp.tool()
-    def get_code_xrefs_to(address: int) -> str:
+    def get_code_xrefs_to(address: int | str) -> str:
         """Code references to address."""
         bv = get_bv()
         try:
+            addr = coerce_address(address)
             lines: List[str] = []
             getter = getattr(bv, "get_code_refs_to", None) or getattr(bv, "get_code_refs", None)
             if getter is None:
                 return "error: no code ref API"
-            for ref in getter(address):
+            for ref in getter(addr):
                 try:
                     ra = int(getattr(ref, "address", None) or getattr(ref, "addr", 0))
                     fn = bv.get_function_at(ra)
@@ -29,15 +30,16 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def get_code_xrefs_from(address: int) -> str:
+    def get_code_xrefs_from(address: int | str) -> str:
         """Outgoing code references from address."""
         bv = get_bv()
         try:
+            addr = coerce_address(address)
             lines: List[str] = []
             getter = getattr(bv, "get_code_refs_from", None)
             if getter is None:
                 return "error: no get_code_refs_from"
-            for ref in getter(address):
+            for ref in getter(addr):
                 ra = int(getattr(ref, "address", None) or getattr(ref, "addr", 0))
                 lines.append(f"0x{ra:x}\t{safe_str(ref)}")
             return "\n".join(lines) if lines else "(none)"
@@ -45,15 +47,16 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def get_data_xrefs_to(address: int) -> str:
+    def get_data_xrefs_to(address: int | str) -> str:
         """Data references to address."""
         bv = get_bv()
         try:
+            addr = coerce_address(address)
             lines: List[str] = []
             getter = getattr(bv, "get_data_refs_to", None) or getattr(bv, "get_data_refs", None)
             if getter is None:
                 return "error: no data ref API"
-            for ref in getter(address):
+            for ref in getter(addr):
                 ra = int(getattr(ref, "address", None) or getattr(ref, "addr", 0))
                 lines.append(f"0x{ra:x}\t{safe_str(ref)}")
             return "\n".join(lines) if lines else "(none)"
@@ -61,15 +64,16 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def get_data_xrefs_from(address: int) -> str:
+    def get_data_xrefs_from(address: int | str) -> str:
         """Outgoing data references from address."""
         bv = get_bv()
         try:
+            addr = coerce_address(address)
             lines: List[str] = []
             getter = getattr(bv, "get_data_refs_from", None)
             if getter is None:
                 return "error: no get_data_refs_from"
-            for ref in getter(address):
+            for ref in getter(addr):
                 ra = int(getattr(ref, "address", None) or getattr(ref, "addr", 0))
                 lines.append(f"0x{ra:x}\t{safe_str(ref)}")
             return "\n".join(lines) if lines else "(none)"
@@ -77,11 +81,19 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def get_call_graph(address_or_name: str, depth: int = 3) -> str:
+    def get_call_graph(
+        address_or_name: str | None = None,
+        depth: int = 3,
+        *,
+        name: str | None = None,
+    ) -> str:
         """BFS call graph (callees) as JSON nodes/edges."""
         bv = get_bv()
         try:
-            root = resolve_function(bv, address_or_name)
+            key = coalesce_address_or_name(address_or_name, name)
+            if not key:
+                return "error: provide address_or_name or name"
+            root = resolve_function(bv, key)
             nodes: List[dict] = []
             edges: List[dict] = []
             seen: Set[int] = set()

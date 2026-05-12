@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from .helpers import safe_str
+from .helpers import coerce_address, safe_str
 
 from .. import state
 
@@ -38,11 +38,12 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def get_symbol_at(address: int) -> str:
+    def get_symbol_at(address: int | str) -> str:
         """Symbol at address."""
         bv = get_bv()
         try:
-            sym = bv.get_symbol_at(address)
+            addr = coerce_address(address)
+            sym = bv.get_symbol_at(addr)
             if sym is None:
                 return "(none)"
             return f"{sym.name}\t{safe_str(sym.type)}"
@@ -101,11 +102,17 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def find_symbol_by_name(pattern: str) -> str:
-        """Substring search in symbol names."""
+    def find_symbol_by_name(
+        pattern: Optional[str] = None,
+        name: Optional[str] = None,
+    ) -> str:
+        """Substring search in symbol names. Pass ``pattern`` or ``name`` (same meaning)."""
+        src = pattern if pattern is not None else name
+        if src is None or str(src).strip() == "":
+            return "error: missing required argument: pattern or name"
         bv = get_bv()
         try:
-            pat = pattern.lower()
+            pat = str(src).lower()
             lines: List[str] = []
             for sym in bv.get_symbols():
                 try:

@@ -3,7 +3,13 @@ from __future__ import annotations
 import json
 from typing import Any, List, Optional
 
-from .helpers import il_to_lines, resolve_function, safe_str
+from .helpers import (
+    coerce_address,
+    coalesce_address_or_name,
+    il_to_lines,
+    resolve_function,
+    safe_str,
+)
 
 
 def register(mcp, get_bv) -> None:
@@ -25,13 +31,14 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def get_function_by_address(address: int) -> str:
+    def get_function_by_address(address: int | str) -> str:
         """Get function summary by address."""
         bv = get_bv()
         try:
-            fn = bv.get_function_at(address)
+            addr = coerce_address(address)
+            fn = bv.get_function_at(addr)
             if fn is None:
-                return f"no function at 0x{address:x}"
+                return f"no function at 0x{addr:x}"
             return _func_summary(fn)
         except Exception as e:
             return f"error: {e}"
@@ -47,13 +54,18 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def decompile_function(address_or_name: str) -> str:
+    def decompile_function(
+        address_or_name: str | None = None, *, name: str | None = None
+    ) -> str:
         """Return HLIL decompilation as text (cached)."""
         from .. import state
 
         bv = get_bv()
         try:
-            fn = resolve_function(bv, address_or_name)
+            key = coalesce_address_or_name(address_or_name, name)
+            if not key:
+                return "error: provide address_or_name or name"
+            fn = resolve_function(bv, key)
             bid = id(bv)
             start = int(fn.start)
             hit, txt = state.hlil_cache().get_text(bid, start)
@@ -67,11 +79,16 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def get_function_llil(address_or_name: str) -> str:
+    def get_function_llil(
+        address_or_name: str | None = None, *, name: str | None = None
+    ) -> str:
         """List LLIL instructions as text lines."""
         bv = get_bv()
         try:
-            fn = resolve_function(bv, address_or_name)
+            key = coalesce_address_or_name(address_or_name, name)
+            if not key:
+                return "error: provide address_or_name or name"
+            fn = resolve_function(bv, key)
             llil = fn.llil
             if llil is None:
                 return "(no llil)"
@@ -80,11 +97,16 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def get_function_mlil(address_or_name: str) -> str:
+    def get_function_mlil(
+        address_or_name: str | None = None, *, name: str | None = None
+    ) -> str:
         """List MLIL instructions as text lines."""
         bv = get_bv()
         try:
-            fn = resolve_function(bv, address_or_name)
+            key = coalesce_address_or_name(address_or_name, name)
+            if not key:
+                return "error: provide address_or_name or name"
+            fn = resolve_function(bv, key)
             mlil = fn.mlil
             if mlil is None:
                 return "(no mlil)"
@@ -93,11 +115,16 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def get_function_hlil(address_or_name: str) -> str:
+    def get_function_hlil(
+        address_or_name: str | None = None, *, name: str | None = None
+    ) -> str:
         """HLIL as structured JSON-ish summary (roots + string dump)."""
         bv = get_bv()
         try:
-            fn = resolve_function(bv, address_or_name)
+            key = coalesce_address_or_name(address_or_name, name)
+            if not key:
+                return "error: provide address_or_name or name"
+            fn = resolve_function(bv, key)
             hlil = fn.hlil
             if hlil is None:
                 return "(no hlil)"
@@ -112,11 +139,19 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def get_function_ssa(address_or_name: str, il_level: str = "mlil") -> str:
+    def get_function_ssa(
+        address_or_name: str | None = None,
+        il_level: str = "mlil",
+        *,
+        name: str | None = None,
+    ) -> str:
         """SSA form for mlil or hlil."""
         bv = get_bv()
         try:
-            fn = resolve_function(bv, address_or_name)
+            key = coalesce_address_or_name(address_or_name, name)
+            if not key:
+                return "error: provide address_or_name or name"
+            fn = resolve_function(bv, key)
             il_level = il_level.lower().strip()
             if il_level == "hlil":
                 h = fn.hlil
@@ -135,11 +170,16 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def get_function_assembly(address_or_name: str) -> str:
+    def get_function_assembly(
+        address_or_name: str | None = None, *, name: str | None = None
+    ) -> str:
         """Disassembly lines for the function."""
         bv = get_bv()
         try:
-            fn = resolve_function(bv, address_or_name)
+            key = coalesce_address_or_name(address_or_name, name)
+            if not key:
+                return "error: provide address_or_name or name"
+            fn = resolve_function(bv, key)
             lines: List[str] = []
             try:
                 addrs = getattr(fn, "instruction_addresses", None)
@@ -164,11 +204,16 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def get_function_callees(address_or_name: str) -> str:
+    def get_function_callees(
+        address_or_name: str | None = None, *, name: str | None = None
+    ) -> str:
         """Functions called by this function."""
         bv = get_bv()
         try:
-            fn = resolve_function(bv, address_or_name)
+            key = coalesce_address_or_name(address_or_name, name)
+            if not key:
+                return "error: provide address_or_name or name"
+            fn = resolve_function(bv, key)
             out: List[str] = []
             for c in fn.callees:
                 out.append(f"0x{int(c.start):x}\t{c.name}")
@@ -177,11 +222,16 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def get_function_callers(address_or_name: str) -> str:
+    def get_function_callers(
+        address_or_name: str | None = None, *, name: str | None = None
+    ) -> str:
         """Functions that call this function."""
         bv = get_bv()
         try:
-            fn = resolve_function(bv, address_or_name)
+            key = coalesce_address_or_name(address_or_name, name)
+            if not key:
+                return "error: provide address_or_name or name"
+            fn = resolve_function(bv, key)
             out: List[str] = []
             for c in fn.callers:
                 out.append(f"0x{int(c.start):x}\t{c.name}")
@@ -190,11 +240,16 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def get_function_variables(address_or_name: str) -> str:
+    def get_function_variables(
+        address_or_name: str | None = None, *, name: str | None = None
+    ) -> str:
         """Local/stack variables."""
         bv = get_bv()
         try:
-            fn = resolve_function(bv, address_or_name)
+            key = coalesce_address_or_name(address_or_name, name)
+            if not key:
+                return "error: provide address_or_name or name"
+            fn = resolve_function(bv, key)
             lines: List[str] = []
             for v in fn.vars:
                 try:
@@ -206,11 +261,16 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def get_function_parameters(address_or_name: str) -> str:
+    def get_function_parameters(
+        address_or_name: str | None = None, *, name: str | None = None
+    ) -> str:
         """Function parameter names and types."""
         bv = get_bv()
         try:
-            fn = resolve_function(bv, address_or_name)
+            key = coalesce_address_or_name(address_or_name, name)
+            if not key:
+                return "error: provide address_or_name or name"
+            fn = resolve_function(bv, key)
             lines: List[str] = []
             for p in fn.parameter_vars:
                 lines.append(f"{p.name}\t{safe_str(p.type)}")
@@ -219,21 +279,31 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def get_function_return_type(address_or_name: str) -> str:
+    def get_function_return_type(
+        address_or_name: str | None = None, *, name: str | None = None
+    ) -> str:
         """Return type string."""
         bv = get_bv()
         try:
-            fn = resolve_function(bv, address_or_name)
+            key = coalesce_address_or_name(address_or_name, name)
+            if not key:
+                return "error: provide address_or_name or name"
+            fn = resolve_function(bv, key)
             return safe_str(fn.return_type)
         except Exception as e:
             return f"error: {e}"
 
     @mcp.tool()
-    def get_function_tags(address_or_name: str) -> str:
+    def get_function_tags(
+        address_or_name: str | None = None, *, name: str | None = None
+    ) -> str:
         """Tags attached to the function."""
         bv = get_bv()
         try:
-            fn = resolve_function(bv, address_or_name)
+            key = coalesce_address_or_name(address_or_name, name)
+            if not key:
+                return "error: provide address_or_name or name"
+            fn = resolve_function(bv, key)
             lines: List[str] = []
             if hasattr(fn, "tags"):
                 for t in fn.tags:
@@ -243,11 +313,16 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def get_function_complexity(address_or_name: str) -> str:
+    def get_function_complexity(
+        address_or_name: str | None = None, *, name: str | None = None
+    ) -> str:
         """Cyclomatic complexity (approximate via basic blocks)."""
         bv = get_bv()
         try:
-            fn = resolve_function(bv, address_or_name)
+            key = coalesce_address_or_name(address_or_name, name)
+            if not key:
+                return "error: provide address_or_name or name"
+            fn = resolve_function(bv, key)
             n = len(list(fn.basic_blocks))
             # rough: edges not always available uniformly
             return str(max(1, n))

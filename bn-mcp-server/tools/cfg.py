@@ -3,18 +3,23 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List
 
-from .helpers import resolve_function, safe_str
+from .helpers import coalesce_address_or_name, resolve_function, safe_str
 
 from .. import state
 
 
 def register(mcp, get_bv) -> None:
     @mcp.tool()
-    def get_basic_blocks(address_or_name: str) -> str:
+    def get_basic_blocks(
+        address_or_name: str | None = None, *, name: str | None = None
+    ) -> str:
         """List basic blocks with successors."""
         bv = get_bv()
         try:
-            fn = resolve_function(bv, address_or_name)
+            key = coalesce_address_or_name(address_or_name, name)
+            if not key:
+                return "error: provide address_or_name or name"
+            fn = resolve_function(bv, key)
             lines: List[str] = []
             for bb in fn.basic_blocks:
                 try:
@@ -29,11 +34,16 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def get_cfg(address_or_name: str) -> str:
+    def get_cfg(
+        address_or_name: str | None = None, *, name: str | None = None
+    ) -> str:
         """CFG as JSON nodes/edges (basic blocks)."""
         bv = get_bv()
         try:
-            fn = resolve_function(bv, address_or_name)
+            key = coalesce_address_or_name(address_or_name, name)
+            if not key:
+                return "error: provide address_or_name or name"
+            fn = resolve_function(bv, key)
             bid = id(bv)
             start = int(fn.start)
             hit, cached = state.cfg_cache().get(bid, start)
@@ -68,11 +78,16 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def get_dominators(address_or_name: str) -> str:
+    def get_dominators(
+        address_or_name: str | None = None, *, name: str | None = None
+    ) -> str:
         """Dominators if available; else approximate from CFG."""
         bv = get_bv()
         try:
-            fn = resolve_function(bv, address_or_name)
+            key = coalesce_address_or_name(address_or_name, name)
+            if not key:
+                return "error: provide address_or_name or name"
+            fn = resolve_function(bv, key)
             doms: Dict[str, Any] = {}
             for bb in fn.basic_blocks:
                 if hasattr(bb, "dominators"):

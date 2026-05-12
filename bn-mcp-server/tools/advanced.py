@@ -4,7 +4,7 @@ import difflib
 import json
 from typing import List
 
-from .helpers import resolve_function, safe_str
+from .helpers import coalesce_address_or_name, resolve_function, safe_str
 
 
 _DEFAULT_DANGEROUS = [
@@ -64,11 +64,16 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def get_taint_sources(address_or_name: str) -> str:
+    def get_taint_sources(
+        address_or_name: str | None = None, *, name: str | None = None
+    ) -> str:
         """Heuristic: calls and reads that may be external input."""
         bv = get_bv()
         try:
-            fn = resolve_function(bv, address_or_name)
+            key = coalesce_address_or_name(address_or_name, name)
+            if not key:
+                return "error: provide address_or_name or name"
+            fn = resolve_function(bv, key)
             lines: List[str] = []
             mlil = fn.mlil
             if mlil is None:
@@ -83,11 +88,16 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def find_buffer_operations(address_or_name: str) -> str:
+    def find_buffer_operations(
+        address_or_name: str | None = None, *, name: str | None = None
+    ) -> str:
         """Heuristic: memcpy/memset/strcpy-like MLIL patterns."""
         bv = get_bv()
         try:
-            fn = resolve_function(bv, address_or_name)
+            key = coalesce_address_or_name(address_or_name, name)
+            if not key:
+                return "error: provide address_or_name or name"
+            fn = resolve_function(bv, key)
             mlil = fn.mlil
             if mlil is None:
                 return "(no mlil)"

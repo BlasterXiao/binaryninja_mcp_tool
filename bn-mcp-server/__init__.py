@@ -20,6 +20,9 @@ try:
     from .ui.menu import register as _register_menu
 
     _register_menu()
+    from .ui import statusbar as _statusbar
+
+    _statusbar.set_stopped()
 except Exception as _ex:
     import traceback
 

@@ -1,14 +1,13 @@
 """
-Persistent configuration: port, bearer token, cache size, confirmations.
+Persistent configuration: port, cache size, confirmations.
 """
 from __future__ import annotations
 
 import json
 import os
-import secrets
 import threading
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 _lock = threading.RLock()
 
@@ -37,7 +36,6 @@ def load_config() -> Dict[str, Any]:
     with _lock:
         if not path.exists():
             cfg = dict(_DEFAULTS)
-            cfg["bearer_token"] = secrets.token_hex(16)
             _save_unlocked(path, cfg)
             return cfg
         try:
@@ -45,9 +43,6 @@ def load_config() -> Dict[str, Any]:
         except Exception:
             data = {}
         cfg = {**_DEFAULTS, **data}
-        if "bearer_token" not in cfg or not cfg["bearer_token"]:
-            cfg["bearer_token"] = secrets.token_hex(16)
-            _save_unlocked(path, cfg)
         return cfg
 
 
@@ -60,19 +55,6 @@ def save_config(cfg: Dict[str, Any]) -> None:
     path = _config_path()
     with _lock:
         _save_unlocked(path, cfg)
-
-
-def get_token() -> str:
-    return str(load_config().get("bearer_token", ""))
-
-
-def regenerate_token() -> str:
-    path = _config_path()
-    with _lock:
-        cfg = load_config()
-        cfg["bearer_token"] = secrets.token_hex(16)
-        _save_unlocked(path, cfg)
-        return cfg["bearer_token"]
 
 
 def get_port() -> int:

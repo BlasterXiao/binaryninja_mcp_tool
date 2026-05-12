@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from .helpers import resolve_function, run_on_main, safe_str
+from .helpers import (
+    coerce_address,
+    coalesce_address_or_name,
+    resolve_function,
+    run_on_main,
+    safe_str,
+)
 
 from .. import context as ctxmod
 from .. import state
@@ -49,12 +55,13 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def define_function_at(address: int, name: str = "") -> str:
+    def define_function_at(address: int | str, name: str = "") -> str:
         def _do():
+            addr = coerce_address(address)
             bv = get_bv()
-            bv.create_user_function(address)
+            bv.create_user_function(addr)
             if name:
-                fn = bv.get_function_at(address)
+                fn = bv.get_function_at(addr)
                 if fn:
                     fn.name = name
             state.invalidate_after_write(bv)
@@ -66,10 +73,11 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def undefine_function(address: int) -> str:
+    def undefine_function(address: int | str) -> str:
         def _do():
+            addr = coerce_address(address)
             bv = get_bv()
-            fn = bv.get_function_at(address)
+            fn = bv.get_function_at(addr)
             if fn is None:
                 return "no function"
             bv.remove_user_function(fn)
@@ -82,10 +90,15 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def reanalyze_function(address_or_name: str) -> str:
+    def reanalyze_function(
+        address_or_name: str | None = None, *, name: str | None = None
+    ) -> str:
         def _do():
             bv = get_bv()
-            fn = resolve_function(bv, address_or_name)
+            key = coalesce_address_or_name(address_or_name, name)
+            if not key:
+                raise ValueError("provide address_or_name or name")
+            fn = resolve_function(bv, key)
             if hasattr(fn, "reanalyze"):
                 fn.reanalyze()
             state.invalidate_after_write(bv)

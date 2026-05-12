@@ -83,26 +83,31 @@ def register(mcp, get_bv) -> None:
         return "\n".join(lines) if lines else "(no sections or not supported)"
 
     @mcp.tool()
-    def read_memory(address: int, length: int) -> str:
+    def read_memory(address: int | str, length: int) -> str:
         """Read raw bytes at address (hex string)."""
+        from .helpers import coerce_address
+
         bv = get_bv()
         try:
-            data = bv.read(address, length)
+            addr = coerce_address(address)
+            data = bv.read(addr, length)
             return data.hex()
         except Exception as e:
             return f"error: {e}"
 
     @mcp.tool()
-    def write_memory(address: int, data: str) -> str:
+    def write_memory(address: int | str, data: str) -> str:
         """Write raw bytes (hex string, no spaces) at address. Uses main thread."""
-        from .helpers import run_on_main
+        from .helpers import coerce_address, run_on_main
 
         from .. import state
+
+        addr = coerce_address(address)
 
         def _do():
             bv = get_bv()
             raw = bytes.fromhex(data.replace(" ", ""))
-            bv.write(address, raw)
+            bv.write(addr, raw)
             state.invalidate_after_write(bv)
             return "ok"
 

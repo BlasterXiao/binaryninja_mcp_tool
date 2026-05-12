@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from .helpers import run_on_main
+from .helpers import coerce_address, run_on_main
 
 from .. import config as cfgmod
 from .. import state
@@ -10,8 +10,10 @@ from .. import state
 
 def register(mcp, get_bv) -> None:
     @mcp.tool()
-    def patch_bytes(address: int, data: str) -> str:
+    def patch_bytes(address: int | str, data: str) -> str:
         """Write raw bytes (hex string) at address."""
+
+        addr = coerce_address(address)
 
         def confirm() -> bool:
             cfg = cfgmod.load_config()
@@ -20,7 +22,7 @@ def register(mcp, get_bv) -> None:
             from ..ui import confirm_dialog
 
             return confirm_dialog.confirm_write(
-                f"Patch {len(data.replace(' ', '')) // 2} bytes at 0x{address:x}?"
+                f"Patch {len(data.replace(' ', '')) // 2} bytes at 0x{addr:x}?"
             )
 
         if not confirm():
@@ -31,7 +33,7 @@ def register(mcp, get_bv) -> None:
             raw = bytes.fromhex(data.replace(" ", ""))
             bv.begin_undo_actions()
             try:
-                bv.write(address, raw)
+                bv.write(addr, raw)
                 bv.commit_undo_actions()
             except Exception:
                 bv.undo_undo_actions()
@@ -45,15 +47,17 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def nop_range(start: int, end: int) -> str:
+    def nop_range(start: int | str, end: int | str) -> str:
         """Fill NOP slide in range (architecture-specific NOP)."""
 
         def _do():
+            s = coerce_address(start)
+            e = coerce_address(end)
             bv = get_bv()
             nop = b"\x90"
             if hasattr(bv.arch, "assemble"):
                 try:
-                    asm = bv.arch.assemble("nop", start)
+                    asm = bv.arch.assemble("nop", s)
                     if isinstance(asm, (bytes, bytearray)):
                         nop = bytes(asm[:1])
                     elif isinstance(asm, (list, tuple)) and asm:
@@ -62,8 +66,8 @@ def register(mcp, get_bv) -> None:
                     nop = b"\x90"
             bv.begin_undo_actions()
             try:
-                addr = start
-                while addr < end:
+                addr = s
+                while addr < e:
                     bv.write(addr, nop[:1])
                     addr += len(nop[:1])
                 bv.commit_undo_actions()
@@ -79,14 +83,15 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def assemble_and_patch(address: int, asm: str) -> str:
+    def assemble_and_patch(address: int | str, asm: str) -> str:
         """Assemble one instruction and patch."""
 
         def _do():
+            addr = coerce_address(address)
             bv = get_bv()
             if not hasattr(bv.arch, "assemble"):
                 return "assemble not available"
-            insns = bv.arch.assemble(asm, address)
+            insns = bv.arch.assemble(asm, addr)
             if not insns:
                 return "assemble failed"
             data = insns[0] if isinstance(insns, (list, tuple)) else insns
@@ -96,7 +101,7 @@ def register(mcp, get_bv) -> None:
                 data = bytes(data)
             bv.begin_undo_actions()
             try:
-                bv.write(address, data)
+                bv.write(addr, data)
                 bv.commit_undo_actions()
             except Exception:
                 bv.undo_undo_actions()

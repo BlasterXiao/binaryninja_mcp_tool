@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from typing import Optional
 
 import binaryninja.interaction as interaction
@@ -11,6 +12,40 @@ from . import context as ctxmod
 
 _task: Optional[object] = None
 _lock = threading.RLock()
+
+
+def _task_is_alive(task: object | None) -> bool:
+    if task is None:
+        return False
+    alive = getattr(task, "is_alive", None)
+    if callable(alive):
+        try:
+            return bool(alive())
+        except Exception:
+            pass
+    thread = getattr(task, "thread", None)
+    alive = getattr(thread, "is_alive", None)
+    if callable(alive):
+        try:
+            return bool(alive())
+        except Exception:
+            pass
+    return False
+
+
+def _join_task(task: object | None, timeout: float) -> bool:
+    if task is None:
+        return True
+    thread = getattr(task, "thread", None)
+    if thread is threading.current_thread():
+        return False
+    join = getattr(task, "join", None)
+    if callable(join):
+        try:
+            join(max(timeout, 0.0))
+        except Exception:
+            pass
+    return not _task_is_alive(task)
 
 
 def _resolve_binary_view_for_start(ctx) -> None:
@@ -45,10 +80,7 @@ def is_server_running() -> bool:
     with _lock:
         if _task is None:
             return False
-        alive = getattr(_task, "is_alive", None)
-        if callable(alive):
-            return bool(alive())
-        return False
+        return _task_is_alive(_task)
 
 
 def _clear_stale_task_if_any() -> None:
@@ -60,8 +92,7 @@ def _clear_stale_task_if_any() -> None:
         return
     if bg_task.is_server_active():
         return
-    alive = getattr(_task, "is_alive", None)
-    if callable(alive) and alive():
+    if _task_is_alive(_task):
         return
     _task = None
 
@@ -69,6 +100,8 @@ def _clear_stale_task_if_any() -> None:
 def start_from_context(ctx) -> None:
     global _task
     with _lock:
+        from . import bg_task
+
         _clear_stale_task_if_any()
         _resolve_binary_view_for_start(ctx)
         if is_server_running():
@@ -78,6 +111,7 @@ def start_from_context(ctx) -> None:
                 interaction.MessageBoxButtonSet.OKButtonSet,
             )
             return
+        bg_task.clear_shutdown_request()
         from .bg_task import MCPServerTask
 
         _task = MCPServerTask()
@@ -91,43 +125,85 @@ def start_from_context(ctx) -> None:
         interaction.show_message_box(
             "MCP Server",
             f"Started at http://{config.get_host()}:{config.get_port()}/mcp\n"
-            f"Token: {config.get_token()}",
+            "(no auth required)",
             interaction.MessageBoxButtonSet.OKButtonSet,
         )
 
 
 def stop_server() -> None:
     global _task
+    task = None
     with _lock:
-        from .bg_task import shutdown_server
+        from . import bg_task
 
-        shutdown_server()
+        task = _task
+        if task is None and not bg_task.is_server_active():
+            try:
+                from .ui import statusbar
+
+                statusbar.set_stopped()
+            except Exception:
+                pass
+            interaction.show_message_box(
+                "MCP Server",
+                "Server is already stopped.",
+                interaction.MessageBoxButtonSet.OKButtonSet,
+            )
+            return
+
+        bg_task.shutdown_server()
         try:
-            if _task is not None:
-                t = _task
-                if hasattr(t, "cancel"):
-                    t.cancel()
+            if task is not None and hasattr(task, "cancel"):
+                task.cancel()
         except Exception:
             pass
-        _task = None
-        try:
-            from .ui import statusbar
 
+    from . import bg_task
+
+    deadline = time.monotonic() + 3.0
+    stopped = bg_task.wait_for_server_shutdown(2.5)
+    remaining = max(0.0, deadline - time.monotonic())
+    if stopped and remaining > 0:
+        stopped = _join_task(task, remaining)
+    if not stopped:
+        bg_task.shutdown_server(force=True)
+        stopped = bg_task.wait_for_server_shutdown(1.0)
+        if stopped:
+            stopped = _join_task(task, 0.5)
+
+    with _lock:
+        if stopped:
+            _task = None
+
+    try:
+        from .ui import statusbar
+
+        if stopped:
             statusbar.set_stopped()
-        except Exception:
-            pass
+        else:
+            statusbar.set_running(config.get_port())
+    except Exception:
+        pass
+
+    if stopped:
         interaction.show_message_box(
-            "MCP Server", "Stop requested.", interaction.MessageBoxButtonSet.OKButtonSet
+            "MCP Server", "Server stopped.", interaction.MessageBoxButtonSet.OKButtonSet
+        )
+    else:
+        interaction.show_message_box(
+            "MCP Server",
+            "Stop requested, but the server is still shutting down.\n"
+            "Try Stop again in a moment.",
+            interaction.MessageBoxButtonSet.OKButtonSet,
         )
 
 
 def show_status() -> None:
-    tok = config.get_token()
     host = config.get_host()
     port = config.get_port()
     interaction.show_message_box(
         "MCP Server",
-        f"URL: http://{host}:{port}/mcp\nBearer: {tok}\n",
+        f"URL: http://{host}:{port}/mcp\n(no auth required)\n",
         interaction.MessageBoxButtonSet.OKButtonSet,
     )
 

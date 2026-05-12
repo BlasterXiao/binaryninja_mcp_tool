@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import List, Optional
 
-from .helpers import safe_str
+from .helpers import coerce_address, safe_str
 
 
 def register(mcp, get_bv) -> None:
@@ -32,10 +32,34 @@ def register(mcp, get_bv) -> None:
             return f"error: {e}"
 
     @mcp.tool()
-    def search_string(keyword: str) -> str:
-        """Search substring in discovered strings."""
+    def search_string(
+        keyword: str | None = None,
+        pattern: str | None = None,
+        regex: bool = False,
+        limit: int = 500,
+    ) -> str:
+        """Search substring (or regex) in discovered strings.
+
+        Args:
+            keyword: substring to search (case-insensitive).
+            pattern: alias for keyword.
+            regex: if True, treat the search term as a Python regex.
+            limit: max results to return (default 500).
+        """
+        kw_source = pattern if pattern is not None else keyword
+        if kw_source is None or str(kw_source).strip() == "":
+            return "error: missing required argument: keyword or pattern"
         bv = get_bv()
-        kw = keyword.lower()
+        kw = str(kw_source)
+        compiled_re = None
+        if regex:
+            try:
+                compiled_re = re.compile(kw, re.IGNORECASE)
+            except re.error as e:
+                return f"error: invalid regex: {e}"
+        else:
+            kw = kw.lower()
+        cap = max(1, min(limit, 5000))
         try:
             lines: List[str] = []
             for s in bv.strings:
@@ -45,20 +69,28 @@ def register(mcp, get_bv) -> None:
                         text = raw.decode("utf-8", errors="replace")
                     else:
                         text = str(raw)
-                    if kw in text.lower():
-                        lines.append(f"0x{int(s.start):x}\t{text[:300]}")
+                    if compiled_re:
+                        if not compiled_re.search(text):
+                            continue
+                    else:
+                        if kw not in text.lower():
+                            continue
+                    lines.append(f"0x{int(s.start):x}\t{text[:300]}")
+                    if len(lines) >= cap:
+                        break
                 except Exception:
                     continue
-            return "\n".join(lines[:500]) if lines else "(no matches)"
+            return "\n".join(lines) if lines else "(no matches)"
         except Exception as e:
             return f"error: {e}"
 
     @mcp.tool()
-    def get_data_at(address: int) -> str:
-        """Data variable at address."""
+    def get_data_at(address: int | str) -> str:
+        """Data variable at address. ``address`` may be int or hex string (e.g. ``0x463474``)."""
         bv = get_bv()
         try:
-            var = bv.get_data_var_at(address)
+            addr = coerce_address(address)
+            var = bv.get_data_var_at(addr)
             if var is None:
                 return "(none)"
             return f"{var.name}\t{safe_str(var.type)}\t{safe_str(var)}"

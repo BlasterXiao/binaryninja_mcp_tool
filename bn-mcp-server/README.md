@@ -2,6 +2,8 @@
 
 在 Binary Ninja **GUI 进程**内运行 MCP（Streamable HTTP），供 Cursor 等客户端通过 `POST /mcp` + Bearer Token 调用逆向分析工具。
 
+**面向用户的说明文档**（功能介绍、使用场景、`doc/` 与 `spec/` 分工等）见 [doc/README.md](doc/README.md) 与 [doc/用户指南.md](doc/用户指南.md)。
+
 ## 安装
 
 1. 将整个 `bn-mcp-server` 文件夹复制到 Binary Ninja 用户插件目录，例如：
